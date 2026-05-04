@@ -52,7 +52,7 @@ module axi_slave_if #(
         if (s_WRITE_EN)
             mem[s_address_memory] <= s_DATA_MEMORY_i;	
     //================ REG =================//
-    reg [4:0] addr;    //dia chi de lam viec voi memory
+    reg [4:0] addr;    //dia chi de lam viec voi memory noi
     reg [7:0] burst_cnt;
     reg [ID_WIDTH-1:0] saved_id;
 
