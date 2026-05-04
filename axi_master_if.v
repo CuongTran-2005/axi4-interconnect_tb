@@ -7,21 +7,27 @@ module axi_master_if #(
     input                       ARESETn_i,
 
     //================ Control ======================//
+	 //Tin hieu doc va ghi vao RAM noi
     input  [4:0]                m_address_memory,
     input                       m_READ_EN,
     input  [DATA_WIDTH-1:0]     m_DATA_MEMORY_i,
     input                       m_WRITE_EN,
     output [DATA_WIDTH-1:0]     m_DATA_MEMORY_o,
-    
+    //Transaction READ
     input                       ReadTrans_EN_i,
-    input  [4:0]                set_addr_memory,   //chon dia chi lua gia tri tu slave tra ve
+    input  [4:0]                r_set_addr_memory,   //chon dia chi lua gia tri tu slave tra ve
     input  [ADDR_WIDTH-1:0]     set_ARADDR_i,
     input  [1:0]                set_ARBURST_i,
     input  [7:0]                set_ARLEN_i,
     input  [2:0]                set_ARSIZE_i,
-
+	 //Transaction WRITE	
     input                       WriteTrans_EN_i,	
-
+	 input  [4:0]                w_set_addr_memory,  // chon dia chi muon gui cho slave
+	 input  [ADDR_WIDTH-1:0]     set_AWADDR_i,
+    input  [1:0]                set_AWBURST_i,
+    input  [7:0]                set_AWLEN_i,
+    input  [2:0]                set_AWSIZE_i,
+	   
     //================ WRITE ADDRESS =================//
     output 		                 m_AWVALID_o,
     output [ID_WIDTH-1:0]       m_AWID_o,
@@ -137,7 +143,7 @@ module axi_master_if #(
 
             AR:
                 if (m_ARVALID_o && m_ARREADY_i) begin
-                    mem_ptr <= set_addr_memory;         //chon dia chi muon nhan du lieu tu slave
+                    mem_ptr <= r_set_addr_memory;         //chon dia chi muon nhan du lieu tu slave
                     burst_cnt <= 0;							//dem so burst
                 end
 
@@ -150,7 +156,7 @@ module axi_master_if #(
 
             AW:
                 if (m_AWVALID_o && m_AWREADY_i) begin
-                    mem_ptr <= set_addr_memory;
+                    mem_ptr <= w_set_addr_memory;
                     burst_cnt <= 0;
                 end
 
@@ -179,16 +185,16 @@ module axi_master_if #(
     assign m_RREADY_o = (state == RDATA);
 
     // WRITE ADDRESS
-    assign m_AWVALID_o = (state == AW) ? 2'b11 : 2'b00; // giữ nguyên width
-    assign m_AWADDR_o  = set_ARADDR_i;
-    assign m_AWBURST_o = set_ARBURST_i;
-    assign m_AWLEN_o   = set_ARLEN_i;
-    assign m_AWSIZE_o  = set_ARSIZE_i;
+    assign m_AWVALID_o = (state == AW) ; // set lai awvalid
+    assign m_AWADDR_o  = set_AWADDR_i;
+    assign m_AWBURST_o = set_AWBURST_i;
+    assign m_AWLEN_o   = set_AWLEN_i;
+    assign m_AWSIZE_o  = set_AWSIZE_i;
     assign m_AWID_o    = 0;
 
     // WRITE DATA
     assign m_WVALID_o = (state == WDATA);
-    assign m_WDATA_o  = mem[mem_ptr];
+    assign m_WDATA_o  = mem[mem_ptr];    //mem o dau
     assign m_WLAST_o  = (burst_cnt == set_ARLEN_i);
 
     // WRITE RESP
