@@ -22,8 +22,8 @@ module axi_master_if #(
     input  [2:0]                set_ARSIZE_i,
 	 //Transaction WRITE	
     input                       WriteTrans_EN_i,	
-	 input  [4:0]                w_set_addr_memory,  // chon dia chi muon gui cho slave
-	 input  [ADDR_WIDTH-1:0]     set_AWADDR_i,
+	input  [4:0]                w_set_addr_memory,  // chon dia chi muon gui cho slave
+	input  [ADDR_WIDTH-1:0]     set_AWADDR_i,
     input  [1:0]                set_AWBURST_i,
     input  [7:0]                set_AWLEN_i,
     input  [2:0]                set_AWSIZE_i,
@@ -71,7 +71,7 @@ module axi_master_if #(
 	 //doc du lieu memory tu master de kiem tra xem co du lieu hay khong
     reg [DATA_WIDTH-1:0] mem [0:31];
 
-    assign DATA_MEMORY_o = (m_READ_EN) ? mem[m_address_memory] : 0;
+    assign m_DATA_MEMORY_o = (m_READ_EN) ? mem[m_address_memory] : 0;
 
     always @(posedge ACLK_i)
         if (m_WRITE_EN)
@@ -195,7 +195,7 @@ module axi_master_if #(
     // WRITE DATA
     assign m_WVALID_o = (state == WDATA);
     assign m_WDATA_o  = mem[mem_ptr];    //mem o dau
-    assign m_WLAST_o  = (burst_cnt == set_ARLEN_i);
+    assign m_WLAST_o  = (burst_cnt == set_AWLEN_i);
 
     // WRITE RESP
     assign m_BREADY_o = (state == BRESP);
