@@ -99,7 +99,6 @@ module axi_slave_if #(
         case(state_r)
         IDLE:
             if (s_ARVALID_i) next_state_r = AR;
-            else if (s_AWVALID_i) next_state_r = AW;
             else next_state_r = IDLE;
 
         AR:
@@ -120,19 +119,8 @@ module axi_slave_if #(
 	 always @(*) begin
         case(state_w)
         IDLE:
-            if (s_ARVALID_i) next_state_w = AR;
-            else if (s_AWVALID_i) next_state_w = AW;
+            if (s_AWVALID_i) next_state_w = AW;
             else next_state_w = IDLE;
-
-        AR:
-            if (s_ARVALID_i && s_ARREADY_o) next_state_w = RDATA;
-            else next_state_w = AR;
-
-        RDATA:
-            if (s_RVALID_o && s_RREADY_i && s_RLAST_o)
-                next_state_w = IDLE;
-            else
-                next_state_w = RDATA;
 
         AW:
             if (s_AWVALID_i && s_AWREADY_o) next_state_w = WDATA;
