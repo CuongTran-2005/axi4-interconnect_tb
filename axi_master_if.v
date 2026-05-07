@@ -1,18 +1,18 @@
 module axi_master_if #(
     parameter ID_WIDTH = 4,
-    parameter ADDR_WIDTH = 32,
-    parameter DATA_WIDTH = 32
+    parameter ADDR_WIDTH = 32,    //toi da tuy vao so luong device va memory cua tung device
+    parameter DATA_WIDTH = 32     //toi da 1024
 )(
     input                       ACLK_i,
     input                       ARESETn_i,
 
     //================ Control ======================//
 	 //Tin hieu doc va ghi vao RAM noi
-    input  [4:0]                m_address_memory,
+    input  [9:0]                m_address_memory,
     input                       m_READ_EN,
-    input  [DATA_WIDTH-1:0]     m_DATA_MEMORY_i,
+    input  [7:0]     			  m_DATA_MEMORY_i, //sua
     input                       m_WRITE_EN,
-    output [DATA_WIDTH-1:0]     m_DATA_MEMORY_o,
+    output [7:0]      			  m_DATA_MEMORY_o, //sua
     //Transaction READ
     input                       ReadTrans_EN_i,
     input  [4:0]                r_set_addr_memory,   //chon dia chi lua gia tri tu slave tra ve
@@ -69,23 +69,30 @@ module axi_master_if #(
 
     //================ MEMORY =================//
 	 //doc du lieu memory tu master de kiem tra xem co du lieu hay khong
-    reg [DATA_WIDTH-1:0] mem [0:31];
+    reg [7:0] mem [0:1023];
 
     assign m_DATA_MEMORY_o = (m_READ_EN) ? mem[m_address_memory] : 0;
-
     always @(posedge ACLK_i)
         if (m_WRITE_EN)
             mem[m_address_memory] <= m_DATA_MEMORY_i;
 
-    //================ INTERNAL =================//
+    //================ REG R =================//
     reg [4:0] mem_ptr_r;
-	 reg [4:0] mem_ptr_w;
     reg [7:0] burst_cnt_r;
-	 reg [7:0] burst_cnt_w;
-
     reg [2:0] state_r, next_state_r;
-	 reg [2:0] state_w, next_state_w;
-
+	 
+	 wire [31:0] beat_size_r  = (1 << set_ARSIZE_i); 
+	 
+	 //================ REG W =================//
+	  
+	  reg [4:0] mem_ptr_w;
+	  reg [7:0] burst_cnt_w;
+	  reg [2:0] state_w, next_state_w;
+	  
+	  wire [31:0] beat_size_w  = (1 << set_AWSIZE_i); 
+	  
+	 //================ PARAMETER STATE =================//
+	 integer i;
     localparam IDLE  = 3'd0,
                AR    = 3'd1,
                RDATA = 3'd2,
@@ -126,8 +133,6 @@ module axi_master_if #(
         default: next_state_r = IDLE;
         endcase
     end
-	 
-	 
 	 
 	 //================ NEXT STATE_W =================//
     always @(*) begin
@@ -171,8 +176,12 @@ module axi_master_if #(
 
             RDATA:
                 if (m_RVALID_i && m_RREADY_o) begin
-                    mem[mem_ptr_r] <= m_RDATA_i;
-                    mem_ptr_r <= mem_ptr_r + 1;
+						  for (i = 0; i < DATA_WIDTH/8; i = i + 1) begin
+							  if (i < beat_size_r)
+									mem[mem_ptr_r + i] <= m_RDATA_i[i*8 +: 8];
+						  end
+                    //mem[mem_ptr_r] <= m_RDATA_i;
+                    mem_ptr_r <= mem_ptr_r + beat_size_r;
                     burst_cnt_r <= burst_cnt_r + 1;
                 end
 
@@ -196,7 +205,7 @@ module axi_master_if #(
 
             WDATA:
                 if (m_WVALID_o && m_WREADY_i) begin
-                    mem_ptr_w <= mem_ptr_w + 1;
+                    mem_ptr_w <= mem_ptr_w + beat_size_w;
                     burst_cnt_w <= burst_cnt_w + 1;
                 end
 
@@ -229,7 +238,14 @@ module axi_master_if #(
 
     // WRITE DATA
     assign m_WVALID_o = (state_w == WDATA);
-    assign m_WDATA_o  = mem[mem_ptr_w];    //mem o dau
+	 genvar j;
+	 generate
+		  for (j = 0; j < DATA_WIDTH/8; j = j + 1) begin : GEN_RDATA
+			  assign m_WDATA_o [j*8 +: 8] = mem[mem_ptr_w + j];
+		  end 
+	 endgenerate
+	 
+    //assign m_WDATA_o  = mem[mem_ptr_w];    //mem o dau
     assign m_WLAST_o  = (burst_cnt_w == set_AWLEN_i);
 
     // WRITE RESP
