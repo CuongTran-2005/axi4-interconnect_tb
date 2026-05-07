@@ -73,7 +73,7 @@ module axi_master_if #(
 
     assign m_DATA_MEMORY_o = (m_READ_EN) ? mem[m_address_memory] : 0;
     always @(posedge ACLK_i)
-        if (m_WRITE_EN)
+        if (m_WRITE_EN && state_r == IDLE && state_w == IDLE)
             mem[m_address_memory] <= m_DATA_MEMORY_i;
 
     //================ REG R =================//
@@ -83,6 +83,11 @@ module axi_master_if #(
 	 
 	 wire [31:0] beat_size_r  = (1 << set_ARSIZE_i); 
 	 
+    reg  [ADDR_WIDTH-1:0]     reg_set_ARADDR_i;
+    reg  [1:0]                reg_set_ARBURST_i;
+    reg  [7:0]                reg_set_ARLEN_i;
+    reg  [2:0]                reg_set_ARSIZE_i;
+	 
 	 //================ REG W =================//
 	  
 	  reg [4:0] mem_ptr_w;
@@ -90,6 +95,12 @@ module axi_master_if #(
 	  reg [2:0] state_w, next_state_w;
 	  
 	  wire [31:0] beat_size_w  = (1 << set_AWSIZE_i); 
+	  
+	  reg  [ADDR_WIDTH-1:0]     reg_set_AWADDR_i;
+	  reg  [1:0]                reg_set_AWBURST_i;
+     reg  [7:0]                reg_set_AWLEN_i;
+     reg  [2:0]                reg_set_AWSIZE_i;
+	 
 	  
 	 //================ PARAMETER STATE =================//
 	 integer i;
@@ -116,7 +127,10 @@ module axi_master_if #(
 	  always @(*) begin
         case(state_r)
         IDLE:
-            if (ReadTrans_EN_i) next_state_r = AR;
+            if (ReadTrans_EN_i) 
+				begin
+					next_state_r = AR;
+				end
             else next_state_r = IDLE;
 
         AR:
@@ -172,10 +186,14 @@ module axi_master_if #(
                 if (m_ARVALID_o && m_ARREADY_i) begin
                     mem_ptr_r <= r_set_addr_memory;         //chon dia chi muon nhan du lieu tu slave
                     burst_cnt_r <= 0;							//dem so burst
+						  reg_set_ARADDR_i <= set_ARADDR_i;
+						  reg_set_ARBURST_i <= set_ARBURST_i;
+						  reg_set_ARLEN_i <= set_ARLEN_i;
+						  reg_set_ARSIZE_i <=set_ARSIZE_i;
                 end
 
             RDATA:
-                if (m_RVALID_i && m_RREADY_o) begin
+                if (m_RVALID_i && m_RREADY_o && !m_WRITE_EN) begin
 						  for (i = 0; i < DATA_WIDTH/8; i = i + 1) begin
 							  if (i < beat_size_r)
 									mem[mem_ptr_r + i] <= m_RDATA_i[i*8 +: 8];
@@ -191,7 +209,7 @@ module axi_master_if #(
     end
 	 
 	 //================ POINTER + BURST WRITE =================//
-	     always @(posedge ACLK_i or negedge ARESETn_i) begin
+	 always @(posedge ACLK_i or negedge ARESETn_i) begin
         if (!ARESETn_i) begin
             mem_ptr_w <= 0;
             burst_cnt_w <= 0;
@@ -201,6 +219,10 @@ module axi_master_if #(
                 if (m_AWVALID_o && m_AWREADY_i) begin
                     mem_ptr_w <= w_set_addr_memory;
                     burst_cnt_w <= 0;
+						  reg_set_AWADDR_i <= set_AWADDR_i;
+						  reg_set_AWBURST_i <= set_AWBURST_i;
+						  reg_set_AWLEN_i <= set_AWLEN_i;
+						  reg_set_AWSIZE_i <=set_AWSIZE_i;
                 end
 
             WDATA:
@@ -219,10 +241,10 @@ module axi_master_if #(
 
     // READ ADDRESS
     assign m_ARVALID_o = (state_r == AR);
-    assign m_ARADDR_o  = set_ARADDR_i;
-    assign m_ARBURST_o = set_ARBURST_i;
-    assign m_ARLEN_o   = set_ARLEN_i;
-    assign m_ARSIZE_o  = set_ARSIZE_i;
+    assign m_ARADDR_o  = reg_set_ARADDR_i;
+    assign m_ARBURST_o = reg_set_ARBURST_i;
+    assign m_ARLEN_o   = reg_set_ARLEN_i;
+    assign m_ARSIZE_o  = reg_set_ARSIZE_i;
     assign m_ARID_o    = 0;
 
     // READ DATA
@@ -230,10 +252,10 @@ module axi_master_if #(
 
     // WRITE ADDRESS
     assign m_AWVALID_o = (state_w == AW) ; // set lai awvalid
-    assign m_AWADDR_o  = set_AWADDR_i;
-    assign m_AWBURST_o = set_AWBURST_i;
-    assign m_AWLEN_o   = set_AWLEN_i;
-    assign m_AWSIZE_o  = set_AWSIZE_i;
+    assign m_AWADDR_o  = reg_set_AWADDR_i;
+    assign m_AWBURST_o = reg_set_AWBURST_i;
+    assign m_AWLEN_o   = reg_set_AWLEN_i;
+    assign m_AWSIZE_o  = reg_set_AWSIZE_i;
     assign m_AWID_o    = 0;
 
     // WRITE DATA
@@ -246,7 +268,7 @@ module axi_master_if #(
 	 endgenerate
 	 
     //assign m_WDATA_o  = mem[mem_ptr_w];    //mem o dau
-    assign m_WLAST_o  = (burst_cnt_w == set_AWLEN_i);
+    assign m_WLAST_o  = (burst_cnt_w == reg_set_AWLEN_i);
 
     // WRITE RESP
     assign m_BREADY_o = (state_w == BRESP);

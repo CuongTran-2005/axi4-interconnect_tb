@@ -37,7 +37,7 @@ module axi_slave_if #(
     input  [ADDR_WIDTH-1:0]     s_ARADDR_i,
     input  [7:0]                s_ARLEN_i,
 	 input  [1:0]					  s_ARBURST_i,
-	 input  [2:0]                s_ARSIZE_i,    //chua lam viec voi tk size
+	 input  [2:0]                s_ARSIZE_i,    
     output                      s_ARREADY_o,
 
     // READ DATA
@@ -66,12 +66,17 @@ module axi_slave_if #(
     reg [ID_WIDTH-1:0] saved_id_r;
     reg [2:0] state_r, next_state_r;
 	 
+	 reg  [ADDR_WIDTH-1:0]     reg_s_ARADDR_i;
+    reg  [1:0]                reg_s_ARBURST_i;
+    reg  [7:0]                reg_s_ARLEN_i;
+    reg  [2:0]                reg_s_ARSIZE_i;
+	 
 		//BURST R signed
-	 wire [31:0] beat_size_r  = (1 << s_ARSIZE_i);     // số byte mỗi beat
-	 wire [31:0] burst_len_r  = s_ARLEN_i + 1;         // số beat
+	 wire [31:0] beat_size_r  = (1 << reg_s_ARSIZE_i);     // số byte mỗi beat
+	 wire [31:0] burst_len_r  = reg_s_ARLEN_i + 1;         // số beat
 	 wire [31:0] boundary_r   = burst_len_r * beat_size_r; // kích thước block
 	 wire [31:0] mask_r       = boundary_r - 1;
-	 wire [31:0] wrap_base_r  = s_ARADDR_i & ~mask_r;    //  ARADDR ban đầu
+	 wire [31:0] wrap_base_r  = reg_s_ARADDR_i & ~mask_r;    //  ARADDR ban đầu
 	 wire [31:0] offset_r     = addr_r & mask_r;
 	 wire [31:0] next_offset_r= (offset_r + beat_size_r) & mask_r;
 	 
@@ -85,12 +90,17 @@ module axi_slave_if #(
 	 reg [ID_WIDTH-1:0] saved_id_w;
 	 reg [2:0] state_w, next_state_w;
 	 
+	 reg  [ADDR_WIDTH-1:0]     reg_s_AWADDR_i;
+	 reg  [1:0]                reg_s_AWBURST_i;
+    reg  [7:0]                reg_s_AWLEN_i;
+    reg  [2:0]                reg_s_AWSIZE_i;
+	 
 	 	//BURST W signed
-	 wire [31:0] beat_size_w  = (1 << s_AWSIZE_i);     // số byte mỗi beat
-	 wire [31:0] burst_len_w  = s_AWLEN_i + 1;         // số beat
+	 wire [31:0] beat_size_w  = (1 << reg_s_AWSIZE_i);     // số byte mỗi beat
+	 wire [31:0] burst_len_w  = reg_s_AWLEN_i + 1;         // số beat
 	 wire [31:0] boundary_w   = burst_len_w * beat_size_w; // kích thước block
 	 wire [31:0] mask_w       = boundary_w - 1;
-	 wire [31:0] wrap_base_w  = s_AWADDR_i & ~mask_w;    //  AWADDR ban đầu
+	 wire [31:0] wrap_base_w  = reg_s_AWADDR_i & ~mask_w;    //  AWADDR ban đầu
 	 wire [31:0] offset_w     = addr_w & mask_w;
 	 wire [31:0] next_offset_w= (offset_w + beat_size_w) & mask_w;
 	 
@@ -205,12 +215,18 @@ module axi_slave_if #(
                     addr_r <= s_ARADDR_i; 
                     burst_cnt_r <= 0;
                     saved_id_r <= s_ARID_i;
+						  
+						  reg_s_ARADDR_i <=s_ARADDR_i;
+						  reg_s_ARBURST_i <=s_ARBURST_i;
+						  reg_s_ARLEN_i <= s_ARLEN_i;
+						  reg_s_ARSIZE_i <= s_ARSIZE_i;
+						  
                 end
             end
 
             RDATA: begin
                 if (s_RVALID_o && s_RREADY_i) begin
-							case (s_ARBURST_i)   //addr se thay doi tuy vao arbusrt
+							case (reg_s_ARBURST_i)   //addr se thay doi tuy vao arbusrt
 								00 :	addr_r <= addr_r;
 								01 :  addr_r <= addr_r + beat_size_r;
 								10 : 	addr_r <= wrap_base_r | next_offset_r;   //wrap_base da clear phan dau cua block, next_offset da clear vi tri ben trong block nen or lai la add
@@ -247,12 +263,17 @@ module axi_slave_if #(
                     addr_w <= s_AWADDR_i;   
                     burst_cnt_w <= 0;
                     saved_id_w <= s_AWID_i;
+						  
+						  reg_s_AWADDR_i <= s_AWADDR_i;
+						  reg_s_AWBURST_i <=s_AWBURST_i;
+						  reg_s_AWLEN_i <= s_AWLEN_i;
+						  reg_s_AWSIZE_i <= s_AWSIZE_i;
                 end
             end
 
             WDATA: begin
                 if (s_WVALID_i && s_WREADY_o) begin
-						 case (s_AWBURST_i)   //addr se thay doi tuy vao arbusrt
+						 case (reg_s_AWBURST_i)   //addr se thay doi tuy vao arbusrt
 									00 :	addr_w <= addr_w;
 									01 :  addr_w <= addr_w + beat_size_w;
 									10 : 	addr_w <= wrap_base_w | next_offset_w;   //wrap_base da clear phan dau cua block, next_offset da clear vi tri ben trong block nen or lai la add
