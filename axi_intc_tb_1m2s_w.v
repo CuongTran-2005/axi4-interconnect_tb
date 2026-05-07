@@ -1,8 +1,6 @@
 `timescale 1ns/1ps
 module axi_interconnect_tb ();
 
-
-
 // ==========================================
 // KHAI BÁO TÍN HIỆU ĐẦU VÀO (INPUT -> reg)
 // ==========================================
@@ -89,13 +87,18 @@ reg                 m_WRITE_EN;
 wire    [32-1:0]    m_DATA_MEMORY_o; 
 
 reg                 ReadTrans_EN_i;
-reg     [4:0]       set_addr_memory;
+reg     [4:0]       r_set_addr_memory;
 reg     [32-1:0]    set_ARADDR_i;
 reg     [1:0]       set_ARBURST_i;
 reg     [7:0]       set_ARLEN_i; 
 reg     [2:0]       set_ARSIZE_i;
 
 reg                 WriteTrans_EN_i;
+reg  [4:0]                w_set_addr_memory;  // chon dia chi muon gui cho slave
+reg  [32-1:0]     set_AWADDR_i;
+reg  [1:0]                set_AWBURST_i;
+reg  [7:0]                set_AWLEN_i;
+reg  [2:0]                set_AWSIZE_i;
 
 // slave0 control signals
 reg [5:0] s0_address_memory;
@@ -221,18 +224,23 @@ reg s0_WRITE_EN;
         .m_RRESP_i(m_RRESP_o),
 
         // control
-        .m_address_memory(address_memory),
-        .m_READ_EN(READ_EN),
-        .m_DATA_MEMORY_i(DATA_MEMORY_i),
-        .m_DATA_MEMORY_o(DATA_MEMORY_o),
+        .m_address_memory(m_address_memory),
+        .m_READ_EN(m_READ_EN),
+        .m_DATA_MEMORY_i(m_DATA_MEMORY_i),
+        .m_DATA_MEMORY_o(m_DATA_MEMORY_o),
         .m_WRITE_EN(m_WRITE_EN),
         .ReadTrans_EN_i(ReadTrans_EN_i),
-        .set_addr_memory(set_addr_memory),
+        .r_set_addr_memory(r_set_addr_memory),
         .set_ARADDR_i(set_ARADDR_i),
         .set_ARBURST_i(set_ARBURST_i),
         .set_ARLEN_i(set_ARLEN_i),
         .set_ARSIZE_i(set_ARSIZE_i),
-        .WriteTrans_EN_i(WriteTrans_EN_i) 
+        .WriteTrans_EN_i(WriteTrans_EN_i),
+        .w_set_addr_memory(w_set_addr_memory),
+        .set_AWADDR_i(set_AWADDR_i),
+        .set_AWBURST_i(set_AWBURST_i),
+        .set_AWLEN_i(set_AWLEN_i),
+        .set_AWSIZE_i(set_AWSIZE_i)
     );
 
     axi_slave_if #(.ID_WIDTH(5), .ADDR_WIDTH(32), .DATA_WIDTH(32))
@@ -328,26 +336,35 @@ reg s0_WRITE_EN;
         ARESETn_i = 1'b1;
         #100;
 
-        // nap 4 word vao slave0
+        // nap 4 word vao master0
         for (i = 0 ;i < 4;i = i + 1) begin
             @(negedge ACLK_i);
-            s0_address_memory <= i;
-            s0_DATA_MEMORY_i <= i;
-            s0_WRITE_EN <= 1'b1;
+            m_address_memory <= i;
+            m_DATA_MEMORY_i <= i;
+            m_WRITE_EN  <= 1'b1;
         end 
         @(posedge ACLK_i);
-        s0_WRITE_EN <= 1'b0;
+        m_WRITE_EN <= 1'b0;
 
-        // doc 4 word tu slave0 
+        // doc 4 word tu ram noi cua master0
+        for (i = 0 ;i < 4;i = i + 1) begin
+            @(negedge ACLK_i);
+            m_address_memory <= i;
+            m_READ_EN  <= 1'b1;
+        end 
+        @(posedge ACLK_i);
+        m_READ_EN <= 1'b0; 
+
+        // truyen 4 word tu master0 den slave0
         @(negedge ACLK_i);
-        ReadTrans_EN_i <= 1'b1;
-        set_addr_memory <= 0;
-        set_ARADDR_i <= 0;
-        set_ARBURST_i <= 1;
-        set_ARLEN_i <= 3; 
-        set_ARSIZE_i <= 3'b101;
+        w_set_addr_memory <= 1;
+        set_AWADDR_i <= 0;
+        set_AWBURST_i <= 1;
+        set_AWLEN_i <= 3;
+        set_AWSIZE_i <= 3'b010;
+        WriteTrans_EN_i <= 1;
         @(negedge ACLK_i);
-        ReadTrans_EN_i <= 1'b0;
+        w_set_addr_memory <= 0; 
 
         // 4. doi mo phong chay mot thoi gian de xem waveform
         #1000;

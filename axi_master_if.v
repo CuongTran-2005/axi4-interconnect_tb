@@ -228,9 +228,9 @@ module axi_master_if #(
     assign m_AWID_o    = 0;
 
     // WRITE DATA
-    assign m_WVALID_o = (state == WDATA);
-    assign m_WDATA_o  = mem[mem_ptr];    //mem o dau
-    assign m_WLAST_o  = (burst_cnt == set_ARLEN_i);
+    assign m_WVALID_o = (state_w == WDATA);
+    assign m_WDATA_o  = mem[mem_ptr_w];    //mem o dau
+    assign m_WLAST_o  = (burst_cnt_w == set_AWLEN_i);
 
     // WRITE RESP
     assign m_BREADY_o = (state_w == BRESP);
