@@ -5,15 +5,19 @@ module axi_slave_w#(
 )(
 	input                       ACLK_i,
     input                       ARESETn_i,
-//==================== ACCESS ===================//
-	input  w_ram_access,
-//================== RAM  ==================//
- 
+
+//================== REQUEST RAM  ==================//
+	 output w_busy,
+	 output w_request,
+	 input  w_ram_access,
+	
 	 output reg    [6:0] 				ram_address,
 	 output reg [DATA_WIDTH:0] 		ram_data_in,
 	 output  								ram_wren,
 	 input    	[DATA_WIDTH-1:0]		ram_data_out,
-	 // WRITE ADDRESS
+	 output 		[DATA_WIDTH/8-1:0]  	strobe,   //chua giai quyet strobe
+ //================ WRITE ADDRESS ==================//
+	
     input                       s_AWVALID_i,
     input  [ID_WIDTH-1:0]       s_AWID_i,
     input  [ADDR_WIDTH-1:0]     s_AWADDR_i,
@@ -21,13 +25,13 @@ module axi_slave_w#(
 	 input  [1:0]                s_AWBURST_i,
 	 input  [2:0]                s_AWSIZE_i,
     output                      s_AWREADY_o,
-
+ //================ WRITE DATA ==================//
     // WRITE DATA
     input                       s_WVALID_i,
     input  [DATA_WIDTH-1:0]     s_WDATA_i,
     input                       s_WLAST_i,
     output                      s_WREADY_o,
-
+ //================ WRITE RESP ==================//
     // WRITE RESP
     output                      s_BVALID_o,
     output [ID_WIDTH-1:0]       s_BID_o,
@@ -49,13 +53,13 @@ module axi_slave_w#(
     reg  [2:0]                reg_s_AWSIZE_i;
 	 
 	 	//BURST W signed
-	 wire [31:0] beat_size_w  = (1 << reg_s_AWSIZE_i);     // số byte mỗi beat
-	 wire [31:0] burst_len_w  = reg_s_AWLEN_i + 1;         // số beat
-	 wire [31:0] boundary_w   = burst_len_w * beat_size_w; // kích thước block
-	 wire [31:0] mask_w       = boundary_w - 1;
-	 wire [31:0] wrap_base_w  = reg_s_AWADDR_i & ~mask_w;    //  AWADDR ban đầu
-	 wire [31:0] offset_w     = addr_w & mask_w;
-	 wire [31:0] next_offset_w= (offset_w + beat_size_w) & mask_w;
+	 wire [7:0] beat_size_w  = (1 << reg_s_AWSIZE_i);     // số byte mỗi beat
+	 wire [7:0] burst_len_w  = reg_s_AWLEN_i + 1;         // số beat
+	 wire [15:0] boundary_w   = burst_len_w * beat_size_w; // kích thước block
+	 wire [ADDR_WIDTH-1:0] mask_w       = boundary_w - 1;
+	 wire [ADDR_WIDTH-1:0] wrap_base_w  = reg_s_AWADDR_i & ~mask_w;    //  AWADDR ban đầu
+	 wire [ADDR_WIDTH-1:0] offset_w     = addr_w & mask_w;
+	 wire [ADDR_WIDTH-1:0] next_offset_w= (offset_w + beat_size_w) & mask_w;
 	 //================PARAMETER STATE =================//
 	 localparam IDLE  = 3'd0,
                WAIT  = 3'd1,
@@ -81,14 +85,23 @@ module axi_slave_w#(
             else next_state_w = IDLE;
 
         AW:
-            if (s_AWVALID_i && s_AWREADY_o) next_state_w = WDATA;
+            if (s_AWVALID_i && s_AWREADY_o && w_ram_access) next_state_w = WDATA;
+				else if (s_AWVALID_i && s_AWREADY_o && w_ram_access) next_state_w =WAIT;
             else next_state_w = AW;
-
+			
+		  WAIT: if (w_ram_access) next_state_w = WDATA;
+				else next_state_w = WAIT;
+		  
         WDATA:
-            if (s_WVALID_i && s_WREADY_o && s_WLAST_i)
+		      if (!w_ram_access) next_state_w = WAIT;
+				else
+            if (s_WVALID_i && s_WREADY_o && s_WLAST_i && w_ram_access)
                 next_state_w = BRESP;
             else
+				
+				if (s_WVALID_i && s_WREADY_o && !s_WLAST_i)
                 next_state_w = WDATA;
+				else next_state_w = WDATA;
 
         BRESP:
             if (s_BVALID_o && s_BREADY_i)

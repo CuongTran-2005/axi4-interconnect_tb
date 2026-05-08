@@ -4,11 +4,10 @@ parameter ID_WIDTH = 4,
     parameter DATA_WIDTH = 32     //toi da 1024
 )(
 
-input                       ACLK_i,
+	input                       ACLK_i,
     input                       ARESETn_i,
-//==================== ACCESS ===================//
-input  r_ram_access,
-//==================== CONTROL COMMAND ===================//
+
+//==================== CONTROL TRANSACTION  ===================//
 
 	 input                       ReadTrans_EN_i,
     input  [4:0]                r_set_addr_memory,   //chon dia chi lua gia tri tu slave tra ve
@@ -16,19 +15,22 @@ input  r_ram_access,
     input  [1:0]                set_ARBURST_i,
     input  [7:0]                set_ARLEN_i,
     input  [2:0]                set_ARSIZE_i,
-	 output 							  r_busy,
+	 
 
-//================== RAM  ==================//
+//================== REQUEST RAM  ==================//
+ output 									r_request,        //request to control
+ output 							  		r_busy,
+ input  									r_ram_access,
  
- output reg  [6:0] 					ram_address,
- output reg [DATA_WIDTH:0] 		ram_data_in,
- output  							ram_wren,
- input    	[DATA_WIDTH-1:0]		ram_data_out,
- output     [DATA_WIDTH/8-1:0]  strobe, //chua giai quyet strobe
+ output reg  [6:0] 					ram_address,     //RAM
+ output reg [DATA_WIDTH-1:0] 		ram_data_in,
+ output  								ram_wren,
+ output     [DATA_WIDTH/8-1:0]  	strobe,				//chua co strobe
+ input    	[DATA_WIDTH-1:0]		ram_data_out, 
  
  //================ READ ADDRESS ==================//
  output                      m_ARVALID_o,
- output [ID_WIDTH-1:0]       m_ARID_o,
+ output [ID_WIDTH-1:0]       m_ARID_o,          //chua dung
  output [ADDR_WIDTH-1:0]     m_ARADDR_o,
  output [1:0]                m_ARBURST_o,
  output [7:0]                m_ARLEN_o,
@@ -46,17 +48,17 @@ input  r_ram_access,
  );
  
  //================ REG R =================//
-    reg [4:0] mem_ptr_r;
+    reg [4:0] mem_ptr_r;        //dia chi de lua vao ram noi
     reg [7:0] burst_cnt_r;
     reg [2:0] state_r, next_state_r;
 	 
-	 wire [31:0] beat_size_r  = (1 << set_ARSIZE_i); 
+	 wire [7:0] beat_size_r  = (1 << set_ARSIZE_i); 
 	 
     reg  [ADDR_WIDTH-1:0]     reg_set_ARADDR_i;
     reg  [1:0]                reg_set_ARBURST_i;
     reg  [7:0]                reg_set_ARLEN_i;
     reg  [2:0]                reg_set_ARSIZE_i;
-	 
+	 	  //================ PARAMETER STATE =================//
 integer i;
 localparam 		IDLE  = 3'd0,
                AR    = 3'd1,
@@ -78,24 +80,24 @@ always @(*) begin
             else next_state_r = IDLE;
 
         AR:
-            if (m_ARVALID_o && m_ARREADY_i && r_ram_access) next_state_r = RDATA;
+            if (m_ARVALID_o && m_ARREADY_i && r_ram_access) next_state_r = RDATA;  
             else 
-				if (m_ARVALID_o && m_ARREADY_i && !r_ram_access) next_state_r = WAIT;
+				if (m_ARVALID_o && m_ARREADY_i && !r_ram_access) next_state_r = WAIT;   //slave da nhan dia chi can doc
 				else
-				next_state_r = AR;
+				next_state_r = AR;  //slave chua nhan dc j AR tiep
 		
 		  WAIT:	
-				if (r_ram_access) next_state_r = RDATA;
-				else next_state_r = WAIT;
+				if (r_ram_access) next_state_r = RDATA;   // da co quyen de truy cap RAM
+				else next_state_r = WAIT;  //chua co quyen
 				
         RDATA:
-            if (m_RVALID_i && m_RREADY_o && m_RLAST_i)
+            if (m_RVALID_i && m_RREADY_o && m_RLAST_i)   //da ghi xong RLAST = 1
                 next_state_r = IDLE;
             else
 				if (!r_ram_access)
-                next_state_r = WAIT;
+                next_state_r = WAIT;     						//dg ghi thi bi mat quyen truy cap RAM
 				else 
-				if (m_RVALID_i && m_RREADY_o && !m_RLAST_i)
+				if (m_RVALID_i && m_RREADY_o && !m_RLAST_i)  //ghi chua xong, RLAST =0
 					next_state_r = RDATA;
 				else next_state_r = RDATA;
 
@@ -113,21 +115,21 @@ always @(posedge ACLK_i or negedge ARESETn_i) begin
                 if (m_ARVALID_o && m_ARREADY_i) begin
                     mem_ptr_r <= r_set_addr_memory;         //chon dia chi muon nhan du lieu tu slave
                     burst_cnt_r <= 0;							//dem so burst
-						  reg_set_ARADDR_i <= set_ARADDR_i;
+						  reg_set_ARADDR_i <= set_ARADDR_i;    //nhap cac gia tri vao thanh ghi boi vi REAdTrans_EN_i chi bat 1 clk
 						  reg_set_ARBURST_i <= set_ARBURST_i;
 						  reg_set_ARLEN_i <= set_ARLEN_i;
 						  reg_set_ARSIZE_i <=set_ARSIZE_i;
                 end
 				
             RDATA:
-                if (m_RVALID_i && m_RREADY_o && r_ram_access) begin
+                if (m_RVALID_i && m_RREADY_o && r_ram_access) begin   //ghi co quyen truy cap ram va handshake thi vao lam
 						  
 							//mem[mem_ptr_r + i] <= m_RDATA_i[i*8 +: 8];
 							ram_address <= mem_ptr_r;
 							ram_data_in <= m_RDATA_i;
-                    //mem[mem_ptr_r] <= m_RDATA_i;
-                    mem_ptr_r <= mem_ptr_r + beat_size_r;
-                    burst_cnt_r <= burst_cnt_r + 1;
+						  //mem[mem_ptr_r] <= m_RDATA_i;
+						  mem_ptr_r <= mem_ptr_r + beat_size_r;
+						  burst_cnt_r <= burst_cnt_r + 1;
                 end
 
             default: ;
@@ -137,6 +139,7 @@ always @(posedge ACLK_i or negedge ARESETn_i) begin
 	 	 //================ OUTPUT =================//
 //CONTROL
    assign r_busy = (state_r == RDATA);
+	assign r_request = (state_r == WAIT || state_r == RDATA);
 //RAM
 	assign ram_wren = (state_r == RDATA && r_ram_access) ? 0:1;
 // READ ADDRESS

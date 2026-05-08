@@ -6,20 +6,20 @@ parameter ID_WIDTH = 4,
 input                       ACLK_i,
     input                       ARESETn_i,
 	 
-//==================== ACCESS ===================//
-input  w_ram_access,
-//==================== CONTROL COMMAND ===================//
 
+//==================== CONTROL COMMAND ===================//
     input                       WriteTrans_EN_i,	
 	 input  [4:0]                w_set_addr_memory,  // chon dia chi muon gui cho slave
 	 input  [ADDR_WIDTH-1:0]     set_AWADDR_i,
     input  [1:0]                set_AWBURST_i,
     input  [7:0]                set_AWLEN_i,
     input  [2:0]                set_AWSIZE_i,
-	 output 								w_busy,
-//================== RAM  ==================//
+//================== REQUEST RAM ==================//
+ output 									w_request,        //request to control
+ output 							  		w_busy,
+ input  									w_ram_access,
 
- output reg  [6:0] 					ram_address,
+ output reg  [6:0] 					ram_address,       //RAM
  output reg [DATA_WIDTH-1:0] 					ram_data_in,
  output  							ram_wren,
  input    	[DATA_WIDTH-1:0]						ram_data_out,
@@ -49,11 +49,11 @@ input  w_ram_access,
 
 //================ REG W =================//
 	  
-	  reg [4:0] mem_ptr_w;
+	  reg [4:0] mem_ptr_w;   // dia chi de doc tu ram noi
 	  reg [7:0] burst_cnt_w;
 	  reg [2:0] state_w, next_state_w;
 	  
-	  wire [31:0] beat_size_w  = (1 << set_AWSIZE_i); 
+	  wire [7:0] beat_size_w  = (1 << set_AWSIZE_i); 
 	  
 	  reg  [ADDR_WIDTH-1:0]     reg_set_AWADDR_i;
 	  reg  [1:0]                reg_set_AWBURST_i;
@@ -61,7 +61,7 @@ input  w_ram_access,
      reg  [2:0]                reg_set_AWSIZE_i;
 	  
 	  //================ PARAMETER STATE =================//
-	  integer i;
+
     localparam IDLE  = 3'd0,
                WAIT    = 3'd1,
                AW = 3'd2,
@@ -91,12 +91,12 @@ input  w_ram_access,
 				else next_state_w = WAIT;
 
         WDATA:
-            if (m_WVALID_o && m_WREADY_i && m_WLAST_o)
+            if (m_WVALID_o && m_WREADY_i && m_WLAST_o) //ghi data cuoi, RLAST =1 
                 next_state_w = BRESP;
             else
-				if (!w_ram_access) next_state_w = WAIT;
+				if (!w_ram_access) next_state_w = WAIT;  //bi mat quyen truy cap RAM
             else 
-				if (m_WVALID_o && m_WREADY_i && !m_WLAST_o)
+				if (m_WVALID_o && m_WREADY_i && !m_WLAST_o) //chua ghi xong
 					next_state_w = WDATA;
 				else next_state_w = WDATA;
 
@@ -142,6 +142,7 @@ input  w_ram_access,
 	     //================ OUTPUT =================//
 	//CONTROL
    assign w_busy = (state_w == WDATA);
+	assign w_request = (state_w == WAIT || state_w == WDATA);
 	 //RAM
 	assign ram_wren = (state_w == WDATA && w_ram_access);
 	 // WRITE ADDRESS
@@ -154,11 +155,7 @@ input  w_ram_access,
 
     // WRITE DATA
     assign m_WVALID_o = (state_w == WDATA);
-	 
 	 assign m_WDATA_o  = ram_data_out;
-		 
-	 
-    //assign m_WDATA_o  = mem[mem_ptr_w];    //mem o dau
     assign m_WLAST_o  = (burst_cnt_w == reg_set_AWLEN_i);
 
     // WRITE RESP
