@@ -1,169 +1,117 @@
-module axi_slave_w#(
+module axi_slave_w #(
     parameter ID_WIDTH   = 4,
     parameter ADDR_WIDTH = 32,
-    parameter DATA_WIDTH = 32
+    parameter DATA_WIDTH = 32,
+    parameter RAM_ADDR_WIDTH = 7,
+
+    localparam  WORD_SIZE = DATA_WIDTH / 8
 )(
-	input                       ACLK_i,
+    input                       ACLK_i,
     input                       ARESETn_i,
-//==================== ACCESS ===================//
-	input  w_ram_access,
-//================== RAM  ==================//
- 
-	 output reg    [6:0] 				ram_address,
-	 output reg [DATA_WIDTH:0] 		ram_data_in,
-	 output  								ram_wren,
-	 input    	[DATA_WIDTH-1:0]		ram_data_out,
-	 // WRITE ADDRESS
+
+    //==================== ACCESS (To Control) ===================//
+    input                       w_ram_access,
+    output                      w_req,
+    output                      w_busy,
+
+    //================== RAM (To MUX) =========================//
+    output [RAM_ADDR_WIDTH-1:0] ram_address,
+    output [DATA_WIDTH-1:0]     ram_data_in,
+    output                      ram_wren,
+    output [DATA_WIDTH/8-1:0]   ram_strobe,
+    input  [DATA_WIDTH-1:0]     ram_data_out, // Không dùng trong write
+
+    //================ WRITE ADDRESS CHANNEL ==================//
     input                       s_AWVALID_i,
     input  [ID_WIDTH-1:0]       s_AWID_i,
     input  [ADDR_WIDTH-1:0]     s_AWADDR_i,
     input  [7:0]                s_AWLEN_i,
-	 input  [1:0]                s_AWBURST_i,
-	 input  [2:0]                s_AWSIZE_i,
+    input  [1:0]                s_AWBURST_i,
+    input  [2:0]                s_AWSIZE_i,
     output                      s_AWREADY_o,
 
-    // WRITE DATA
+    //================ WRITE DATA CHANNEL =====================//
     input                       s_WVALID_i,
     input  [DATA_WIDTH-1:0]     s_WDATA_i,
+    input  [DATA_WIDTH/8-1:0]   s_WSTRB_i,   // ĐÃ BỔ SUNG
     input                       s_WLAST_i,
     output                      s_WREADY_o,
 
-    // WRITE RESP
+    //================ WRITE RESPONSE CHANNEL =================//
     output                      s_BVALID_o,
     output [ID_WIDTH-1:0]       s_BID_o,
     output [1:0]                s_BRESP_o,
     input                       s_BREADY_i
 );
 
-//================ REG W=================//
-	 //=======================================//
-	 
-	 reg [4:0] addr_w;   
-	 reg [7:0] burst_cnt_w;
-	 reg [ID_WIDTH-1:0] saved_id_w;
-	 reg [2:0] state_w, next_state_w;
-	 
-	 reg  [ADDR_WIDTH-1:0]     reg_s_AWADDR_i;
-	 reg  [1:0]                reg_s_AWBURST_i;
-    reg  [7:0]                reg_s_AWLEN_i;
-    reg  [2:0]                reg_s_AWSIZE_i;
-	 
-	 	//BURST W signed
-	 wire [31:0] beat_size_w  = (1 << reg_s_AWSIZE_i);     // số byte mỗi beat
-	 wire [31:0] burst_len_w  = reg_s_AWLEN_i + 1;         // số beat
-	 wire [31:0] boundary_w   = burst_len_w * beat_size_w; // kích thước block
-	 wire [31:0] mask_w       = boundary_w - 1;
-	 wire [31:0] wrap_base_w  = reg_s_AWADDR_i & ~mask_w;    //  AWADDR ban đầu
-	 wire [31:0] offset_w     = addr_w & mask_w;
-	 wire [31:0] next_offset_w= (offset_w + beat_size_w) & mask_w;
-	 //================PARAMETER STATE =================//
-	 localparam IDLE  = 3'd0,
-               WAIT  = 3'd1,
-               AW    = 3'd3,
-               WDATA = 3'd4,
-               BRESP = 3'd5;
+    //================ FSM STATES =================//
+    localparam IDLE  = 3'd0;
+    localparam WAIT  = 3'd1; // Đợi quyền truy cập RAM
+    localparam WDATA = 3'd2;
+    localparam BRESP = 3'd3;
 
-    integer i;
+    reg [2:0] state_w, next_state_w;
 
-	 //================ STATE W =================//
-	 //==========================================// 
-	 
-	 always @(posedge ACLK_i or negedge ARESETn_i)
+    // Registers lưu trữ thông tin Transaction
+    reg [6:0]          addr_w;
+    reg [7:0]          burst_cnt_w;
+    reg [7:0]          len_w;
+    reg [ID_WIDTH-1:0] id_w;
+
+    always @(posedge ACLK_i or negedge ARESETn_i) begin
         if (!ARESETn_i) state_w <= IDLE;
-        else state_w <= next_state_w;
-	 //================ NEXT STATE W =================//
-	 //===============================================//
-	 
-	 always @(*) begin
-        case(state_w)
-        IDLE:
-            if (s_AWVALID_i) next_state_w = AW;
-            else next_state_w = IDLE;
+        else            state_w <= next_state_w;
+    end
 
-        AW:
-            if (s_AWVALID_i && s_AWREADY_o) next_state_w = WDATA;
-            else next_state_w = AW;
-
-        WDATA:
-            if (s_WVALID_i && s_WREADY_o && s_WLAST_i)
-                next_state_w = BRESP;
-            else
-                next_state_w = WDATA;
-
-        BRESP:
-            if (s_BVALID_o && s_BREADY_i)
-                next_state_w = IDLE;
-            else
-                next_state_w = BRESP;
-
-        default: next_state_w = IDLE;
+    always @(*) begin
+        next_state_w = state_w;
+        case (state_w)
+            IDLE:  if (s_AWVALID_i) next_state_w = WAIT;
+            WAIT:  if (w_ram_access) next_state_w = WDATA;
+            WDATA: if (s_WVALID_i && s_WREADY_o && s_WLAST_i) next_state_w = BRESP;
+            BRESP: if (s_BREADY_i) next_state_w = IDLE;
+            default: next_state_w = IDLE;
         endcase
     end
-//================ ADDRESS / BURST W =================//
-	 //====================================================//
-	 
-	 always @(posedge ACLK_i or negedge ARESETn_i) begin
+
+    always @(posedge ACLK_i or negedge ARESETn_i) begin
         if (!ARESETn_i) begin
-            addr_w <= 0;
+            addr_w      <= 0;
             burst_cnt_w <= 0;
-        end
-        else begin
-            case(state_w)
-
-            AW: begin
-                if (s_AWVALID_i && s_AWREADY_o) begin
-                    addr_w <= s_AWADDR_i;   
-                    burst_cnt_w <= 0;
-                    saved_id_w <= s_AWID_i;
-						  
-						  reg_s_AWADDR_i <= s_AWADDR_i;
-						  reg_s_AWBURST_i <=s_AWBURST_i;
-						  reg_s_AWLEN_i <= s_AWLEN_i;
-						  reg_s_AWSIZE_i <= s_AWSIZE_i;
-                end
+            len_w       <= 0;
+            id_w        <= 0;
+        end else begin
+            if (state_w == IDLE && s_AWVALID_i) begin
+                // Lưu địa chỉ (dịch 2 bit vì đánh địa chỉ theo word 32-bit)
+                addr_w <= s_AWADDR_i[8:2]; 
+                len_w  <= s_AWLEN_i;
+                id_w   <= s_AWID_i;
+                burst_cnt_w <= 0;
+            end 
+            else if (state_w == WDATA && s_WVALID_i && s_WREADY_o) begin
+                addr_w <= addr_w + WORD_SIZE; // Mặc định là INCR burst
+                burst_cnt_w <= burst_cnt_w + 1;
             end
-
-            WDATA: begin
-                if (s_WVALID_i && s_WREADY_o) begin
-						 case (reg_s_AWBURST_i)   //addr se thay doi tuy vao arbusrt
-									00 :	addr_w <= addr_w;
-									01 :  addr_w <= addr_w + beat_size_w;
-									10 : 	addr_w <= wrap_base_w | next_offset_w;   //wrap_base da clear phan dau cua block, next_offset da clear vi tri ben trong block nen or lai la add
-									11 : ;
-						 default: addr_w <= addr_w;           
-						 endcase
-						 
-						 ram_address <= addr_w;
-						 ram_data_in <= s_WDATA_i;
-                    //mem[mem_ptr_r] <= m_RDATA_i;
-                    addr_w <= addr_w + beat_size_w;
-						 //mem[addr_w] <= s_WDATA_i;
-						 burst_cnt_w <= burst_cnt_w + 1;
-				    end
-            end
-
-            default: ;
-            endcase
         end
     end
-	 //=========================================//
-    //================ OUTPUT =================//
-	 //=========================================//
-	 //RAM
-	 assign ram_wren = (state_w == WDATA && w_ram_access) ? 0:1; //nen bat theo xung clock
-	 
-	 //CONTROL
-	 assign w_busy = (state_w == WDATA);
-	
-	// WRITE ADDRESS
-    assign s_AWREADY_o = (state_w == AW);
 
-    // WRITE DATA
-    assign s_WREADY_o = (state_w == WDATA);
+    //================ OUTPUT LOGIC =================//
+    // Control
+    assign w_req  = (state_w == WAIT);
+    assign w_busy = (state_w != IDLE);
 
-    // WRITE RESP
-    assign s_BVALID_o = (state_w == BRESP);
-    assign s_BRESP_o  = 2'b00;
-    assign s_BID_o    = saved_id_w;
+    // RAM
+    assign ram_wren    = (state_w == WDATA && s_WVALID_i);
+    assign ram_address = addr_w;
+    assign ram_data_in = s_WDATA_i;
+    assign ram_strobe  = (state_w == WDATA)?{(DATA_WIDTH/8){1'b1}}:0;
+
+    // AXI
+    assign s_AWREADY_o = (state_w == IDLE);
+    assign s_WREADY_o  = (state_w == WDATA);
+    
+    assign s_BVALID_o  = (state_w == BRESP);
+    assign s_BID_o     = id_w;
+    assign s_BRESP_o   = 2'b00; // OKAY response
 
 endmodule

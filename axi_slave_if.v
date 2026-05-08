@@ -1,46 +1,53 @@
 module axi_slave_if #(
     parameter ID_WIDTH   = 4,
     parameter ADDR_WIDTH = 32,
-    parameter DATA_WIDTH = 32
+    parameter DATA_WIDTH = 32,
+    parameter RAM_SIZE = 128,
+
+    localparam RAM_ADDR_WIDTH = $clog2(RAM_SIZE)
 )(
     input                       ACLK_i,
     input                       ARESETn_i,
-	 //CONTROL
-/*	 input [5:0] s_address_memory,
-	 input [DATA_WIDTH-1:0] s_DATA_MEMORY_i,
-	 input s_WRITE_EN,
-*/
-    // WRITE ADDRESS
+
+    //================ LOCAL CONTROL INTERFACE =================//
+    input  [RAM_ADDR_WIDTH-1:0]                s_address_memory,
+    input                       s_READ_EN,
+    input  [DATA_WIDTH-1:0]                s_DATA_MEMORY_i, 
+    input                       s_WRITE_EN,
+    output [DATA_WIDTH-1:0]                s_DATA_MEMORY_o, 
+    
+    //================ WRITE ADDRESS CHANNEL ===================//
     input                       s_AWVALID_i,
     input  [ID_WIDTH-1:0]       s_AWID_i,
     input  [ADDR_WIDTH-1:0]     s_AWADDR_i,
     input  [7:0]                s_AWLEN_i,
-	 input  [1:0]                s_AWBURST_i,
-	 input  [2:0]                s_AWSIZE_i,
+    input  [1:0]                s_AWBURST_i,
+    input  [2:0]                s_AWSIZE_i,
     output                      s_AWREADY_o,
 
-    // WRITE DATA
+    //================ WRITE DATA CHANNEL ======================//
     input                       s_WVALID_i,
     input  [DATA_WIDTH-1:0]     s_WDATA_i,
+    input  [DATA_WIDTH/8-1:0]   s_WSTRB_i,   // Đã bổ sung Strobe
     input                       s_WLAST_i,
     output                      s_WREADY_o,
 
-    // WRITE RESP
+    //================ WRITE RESPONSE CHANNEL ==================//
     output                      s_BVALID_o,
     output [ID_WIDTH-1:0]       s_BID_o,
     output [1:0]                s_BRESP_o,
     input                       s_BREADY_i,
 
-    // READ ADDRESS
+    //================ READ ADDRESS CHANNEL ====================//
     input                       s_ARVALID_i,
     input  [ID_WIDTH-1:0]       s_ARID_i,
     input  [ADDR_WIDTH-1:0]     s_ARADDR_i,
     input  [7:0]                s_ARLEN_i,
-	 input  [1:0]					  s_ARBURST_i,
-	 input  [2:0]                s_ARSIZE_i,    
+    input  [1:0]                s_ARBURST_i,
+    input  [2:0]                s_ARSIZE_i,    
     output                      s_ARREADY_o,
 
-    // READ DATA
+    //================ READ DATA CHANNEL =======================//
     output                      s_RVALID_o,
     output                      s_RLAST_o,
     output [ID_WIDTH-1:0]       s_RID_o,
@@ -48,282 +55,85 @@ module axi_slave_if #(
     output [1:0]                s_RRESP_o,
     input                       s_RREADY_i
 );
-	 //=========================================//
-    //================ MEMORY =================//
-	 //=========================================//
-    reg [7:0] mem [0:1024];
-		
-/*	 always @(posedge ACLK_i)
-        if (s_WRITE_EN)
-            mem[s_address_memory] <= s_DATA_MEMORY_i;	
-*/	 
-	 //=======================================//
-    //================ REG R=================//
-	 //=======================================//
-	 
-    reg [4:0] addr_r;
-    reg [7:0] burst_cnt_r;
-    reg [ID_WIDTH-1:0] saved_id_r;
-    reg [2:0] state_r, next_state_r;
-	 
-	 reg  [ADDR_WIDTH-1:0]     reg_s_ARADDR_i;
-    reg  [1:0]                reg_s_ARBURST_i;
-    reg  [7:0]                reg_s_ARLEN_i;
-    reg  [2:0]                reg_s_ARSIZE_i;
-	 
-		//BURST R signed
-	 wire [31:0] beat_size_r  = (1 << reg_s_ARSIZE_i);     // số byte mỗi beat
-	 wire [31:0] burst_len_r  = reg_s_ARLEN_i + 1;         // số beat
-	 wire [31:0] boundary_r   = burst_len_r * beat_size_r; // kích thước block
-	 wire [31:0] mask_r       = boundary_r - 1;
-	 wire [31:0] wrap_base_r  = reg_s_ARADDR_i & ~mask_r;    //  ARADDR ban đầu
-	 wire [31:0] offset_r     = addr_r & mask_r;
-	 wire [31:0] next_offset_r= (offset_r + beat_size_r) & mask_r;
-	 
-	 
-	 //=======================================//
-	 //================ REG W=================//
-	 //=======================================//
-	 
-	 reg [4:0] addr_w;   
-	 reg [7:0] burst_cnt_w;
-	 reg [ID_WIDTH-1:0] saved_id_w;
-	 reg [2:0] state_w, next_state_w;
-	 
-	 reg  [ADDR_WIDTH-1:0]     reg_s_AWADDR_i;
-	 reg  [1:0]                reg_s_AWBURST_i;
-    reg  [7:0]                reg_s_AWLEN_i;
-    reg  [2:0]                reg_s_AWSIZE_i;
-	 
-	 	//BURST W signed
-	 wire [31:0] beat_size_w  = (1 << reg_s_AWSIZE_i);     // số byte mỗi beat
-	 wire [31:0] burst_len_w  = reg_s_AWLEN_i + 1;         // số beat
-	 wire [31:0] boundary_w   = burst_len_w * beat_size_w; // kích thước block
-	 wire [31:0] mask_w       = boundary_w - 1;
-	 wire [31:0] wrap_base_w  = reg_s_AWADDR_i & ~mask_w;    //  AWADDR ban đầu
-	 wire [31:0] offset_w     = addr_w & mask_w;
-	 wire [31:0] next_offset_w= (offset_w + beat_size_w) & mask_w;
-	 
-	 //=================================================//
-	 //================PARAMETER STATE =================//
-	 //=================================================//
-	 
-    localparam IDLE  = 3'd0,
-               AR    = 3'd1,
-               RDATA = 3'd2,
-               AW    = 3'd3,
-               WDATA = 3'd4,
-               BRESP = 3'd5;
 
-    integer i;
+    //================ INTERNAL WIRES =================//
+    wire r_ram_access, r_req, r_busy;
+    wire w_ram_access, w_req, w_busy;
+    wire [1:0] ram_mux_sel;
 
-    //================ RESET + MEMORY =================//
-  /*  always @(posedge ACLK_i or negedge ARESETn_i) begin
-        if (!ARESETn_i) begin
-  //          for (i=0;i<32;i=i+1)
-    //            mem[i] <= 0;
-            addr <= 0;
-            burst_cnt <= 0;
-     //       saved_id <= 0;
-        end
-    end*/
-		
-	 //==========================================//	
-    //================ STATE R =================//
-	 //==========================================//
-	 
-    always @(posedge ACLK_i or negedge ARESETn_i)
-        if (!ARESETn_i) state_r <= IDLE;
-        else state_r <= next_state_r;
-
-	 //==========================================//
-	 //================ STATE W =================//
-	 //==========================================// 
-	 
-	 always @(posedge ACLK_i or negedge ARESETn_i)
-        if (!ARESETn_i) state_w <= IDLE;
-        else state_w <= next_state_w;
-		  
-	 //===============================================//
-    //================ NEXT STATE R =================//
-	 //===============================================//
+    wire [RAM_ADDR_WIDTH-1:0]   ctrl_ram_addr, w_ram_addr, r_ram_addr, mux_ram_addr;
+    wire [DATA_WIDTH-1:0]   ctrl_ram_din,  w_ram_din,  r_ram_din,  mux_ram_din;
+    wire                    ctrl_ram_we,   w_ram_we,   r_ram_we,   mux_ram_we;
+    wire [DATA_WIDTH/8-1:0] ctrl_strobe = {(DATA_WIDTH/8){1'b1}};
+    wire [DATA_WIDTH/8-1:0] w_strobe, r_strobe, mux_strobe;
     
-    always @(*) begin
-        case(state_r)
-        IDLE:
-            if (s_ARVALID_i) next_state_r = AR;
-            else next_state_r = IDLE;
+    wire [DATA_WIDTH-1:0]   ram_dout;
 
-        AR:
-            if (s_ARVALID_i && s_ARREADY_o) next_state_r = RDATA;
-            else next_state_r = AR;
+    //================ INSTANTIATIONS =================//
 
-        RDATA:
-            if (s_RVALID_o && s_RREADY_i && s_RLAST_o)
-                next_state_r = IDLE;
-            else
-                next_state_r = RDATA;
+    // 1. Slave Control
+    axi_slave_control #(
+        .DATA_WIDTH(DATA_WIDTH)
+    ) u_slave_ctrl (
+        .ACLK_i(ACLK_i), .ARESETn_i(ARESETn_i),
+        .s_address_memory(s_address_memory),
+        .s_READ_EN(s_READ_EN),
+        .s_DATA_MEMORY_i(s_DATA_MEMORY_i),
+        .s_WRITE_EN(s_WRITE_EN),
+        .s_DATA_MEMORY_o(s_DATA_MEMORY_o),
+        .ctrl_ram_address(ctrl_ram_addr),
+        .ctrl_ram_data_in(ctrl_ram_din),
+        .ctrl_ram_wren(ctrl_ram_we),
+        .ram_data_out(ram_dout),
+        .ram_mux_sel(ram_mux_sel),
+        .r_ram_access(r_ram_access), .r_req(r_req), .r_busy(r_busy),
+        .w_ram_access(w_ram_access), .w_req(w_req), .w_busy(w_busy)
+    );
 
-        default: next_state_r = IDLE;
-        endcase
-    end
-	 
-	 //===============================================//
-	 //================ NEXT STATE W =================//
-	 //===============================================//
-	 
-	 always @(*) begin
-        case(state_w)
-        IDLE:
-            if (s_AWVALID_i) next_state_w = AW;
-            else next_state_w = IDLE;
+    // 2. Slave Write FSM
+    axi_slave_w #(
+        .ID_WIDTH(ID_WIDTH), .ADDR_WIDTH(ADDR_WIDTH), .DATA_WIDTH(DATA_WIDTH), .RAM_ADDR_WIDTH(RAM_ADDR_WIDTH)
+    ) u_slave_w (
+        .ACLK_i(ACLK_i), .ARESETn_i(ARESETn_i),
+        .w_ram_access(w_ram_access), .w_req(w_req), .w_busy(w_busy),
+        .ram_address(w_ram_addr), .ram_data_in(w_ram_din), .ram_wren(w_ram_we), .ram_strobe(w_strobe), .ram_data_out(ram_dout),
+        .s_AWVALID_i(s_AWVALID_i), .s_AWID_i(s_AWID_i), .s_AWADDR_i(s_AWADDR_i), .s_AWLEN_i(s_AWLEN_i), .s_AWBURST_i(s_AWBURST_i), .s_AWSIZE_i(s_AWSIZE_i), .s_AWREADY_o(s_AWREADY_o),
+        .s_WVALID_i(s_WVALID_i), .s_WDATA_i(s_WDATA_i), .s_WSTRB_i(s_WSTRB_i), .s_WLAST_i(s_WLAST_i), .s_WREADY_o(s_WREADY_o),
+        .s_BVALID_o(s_BVALID_o), .s_BID_o(s_BID_o), .s_BRESP_o(s_BRESP_o), .s_BREADY_i(s_BREADY_i)
+    );
 
-        AW:
-            if (s_AWVALID_i && s_AWREADY_o) next_state_w = WDATA;
-            else next_state_w = AW;
+    // 3. Slave Read FSM
+    axi_slave_r #(
+        .ID_WIDTH(ID_WIDTH), .ADDR_WIDTH(ADDR_WIDTH), .DATA_WIDTH(DATA_WIDTH), .RAM_ADDR_WIDTH(RAM_ADDR_WIDTH)
+    ) u_slave_r (
+        .ACLK_i(ACLK_i), .ARESETn_i(ARESETn_i),
+        .r_ram_access(r_ram_access), .r_req(r_req), .r_busy(r_busy),
+        .ram_address(r_ram_addr), .ram_data_in(r_ram_din), .ram_wren(r_ram_we), .ram_strobe(r_strobe), .ram_data_out(ram_dout),
+        .s_ARVALID_i(s_ARVALID_i), .s_ARID_i(s_ARID_i), .s_ARADDR_i(s_ARADDR_i), .s_ARLEN_i(s_ARLEN_i), .s_ARBURST_i(s_ARBURST_i), .s_ARSIZE_i(s_ARSIZE_i), .s_ARREADY_o(s_ARREADY_o),
+        .s_RVALID_o(s_RVALID_o), .s_RLAST_o(s_RLAST_o), .s_RID_o(s_RID_o), .s_RDATA_o(s_RDATA_o), .s_RRESP_o(s_RRESP_o), .s_RREADY_i(s_RREADY_i)
+    );
 
-        WDATA:
-            if (s_WVALID_i && s_WREADY_o && s_WLAST_i)
-                next_state_w = BRESP;
-            else
-                next_state_w = WDATA;
+    // 4. RAM MUX
+    axi_ram_mux #(
+        .DATA_WIDTH(DATA_WIDTH), .RAM_ADDR_WIDTH(RAM_ADDR_WIDTH)
+    ) u_ram_mux (
+        .ram_mux_sel(ram_mux_sel),
+        .ctrl_ram_address(ctrl_ram_addr), .ctrl_ram_data_in(ctrl_ram_din), .ctrl_ram_wren(ctrl_ram_we), .ctrl_ram_strobe(ctrl_strobe),
+        .w_ram_address(w_ram_addr), .w_ram_data_in(w_ram_din), .w_ram_wren(w_ram_we), .w_strobe(w_strobe),
+        .r_ram_address(r_ram_addr), .r_ram_data_in(r_ram_din), .r_ram_wren(r_ram_we), .r_strobe(r_strobe),
+        .ram_addr_o(mux_ram_addr), .ram_data_i_o(mux_ram_din), .ram_wren_o(mux_ram_we), .ram_strobe_o(mux_strobe)
+    );
 
-        BRESP:
-            if (s_BVALID_o && s_BREADY_i)
-                next_state_w = IDLE;
-            else
-                next_state_w = BRESP;
-
-        default: next_state_w = IDLE;
-        endcase
-    end
-	 
-	 //====================================================//
-    //================ ADDRESS / BURST R =================//
-	 //====================================================//
-	 
-    always @(posedge ACLK_i or negedge ARESETn_i) begin
-        if (!ARESETn_i) begin
-            addr_r <= 0;
-            burst_cnt_r <= 0;
-        end
-        else begin
-            case(state_r)
-
-            AR: begin
-                if (s_ARVALID_i && s_ARREADY_o) begin
-                    addr_r <= s_ARADDR_i; 
-                    burst_cnt_r <= 0;
-                    saved_id_r <= s_ARID_i;
-						  
-						  reg_s_ARADDR_i <=s_ARADDR_i;
-						  reg_s_ARBURST_i <=s_ARBURST_i;
-						  reg_s_ARLEN_i <= s_ARLEN_i;
-						  reg_s_ARSIZE_i <= s_ARSIZE_i;
-						  
-                end
-            end
-
-            RDATA: begin
-                if (s_RVALID_o && s_RREADY_i) begin
-							case (reg_s_ARBURST_i)   //addr se thay doi tuy vao arbusrt
-								00 :	addr_r <= addr_r;
-								01 :  addr_r <= addr_r + beat_size_r;
-								10 : 	addr_r <= wrap_base_r | next_offset_r;   //wrap_base da clear phan dau cua block, next_offset da clear vi tri ben trong block nen or lai la add
-								11 : ;
-					 		default: addr_r <= addr_r;           
-							endcase
-							/*for (i = 0; i < DATA_WIDTH/8; i = i + 1) begin
-								 if (i < beat_size_r)
-									  s_RDATA_o[i*8 +: 8] <= mem[addr_r + i];
-							end*/
-					 		burst_cnt_r <= burst_cnt_r + 1;
-					 end
-            end
-
-            default: ;
-            endcase
-        end
-    end
-
-	 //====================================================//
-	 //================ ADDRESS / BURST W =================//
-	 //====================================================//
-	 
-	 always @(posedge ACLK_i or negedge ARESETn_i) begin
-        if (!ARESETn_i) begin
-            addr_w <= 0;
-            burst_cnt_w <= 0;
-        end
-        else begin
-            case(state_w)
-
-            AW: begin
-                if (s_AWVALID_i && s_AWREADY_o) begin
-                    addr_w <= s_AWADDR_i;   
-                    burst_cnt_w <= 0;
-                    saved_id_w <= s_AWID_i;
-						  
-						  reg_s_AWADDR_i <= s_AWADDR_i;
-						  reg_s_AWBURST_i <=s_AWBURST_i;
-						  reg_s_AWLEN_i <= s_AWLEN_i;
-						  reg_s_AWSIZE_i <= s_AWSIZE_i;
-                end
-            end
-
-            WDATA: begin
-                if (s_WVALID_i && s_WREADY_o) begin
-						 case (reg_s_AWBURST_i)   //addr se thay doi tuy vao arbusrt
-									00 :	addr_w <= addr_w;
-									01 :  addr_w <= addr_w + beat_size_w;
-									10 : 	addr_w <= wrap_base_w | next_offset_w;   //wrap_base da clear phan dau cua block, next_offset da clear vi tri ben trong block nen or lai la add
-									11 : ;
-						 default: addr_w <= addr_w;           
-						 endcase
-						 for (i = 0; i < DATA_WIDTH/8; i = i + 1) begin
-							  if (i < beat_size_w)
-									mem[addr_w + i] <= s_WDATA_i[i*8 +: 8];
-						 end
-						 //mem[addr_w] <= s_WDATA_i;
-						 burst_cnt_w <= burst_cnt_w + 1;
-				    end
-            end
-
-            default: ;
-            endcase
-        end
-    end
-	 
-	 //=========================================//
-    //================ OUTPUT =================//
-	 //=========================================//
-	 
-    // READ ADDRESS
-    assign s_ARREADY_o = (state_r == AR);
-
-    // READ DATA
-    assign s_RVALID_o = (state_r == RDATA);
-	 genvar j;
-
-	 generate
-		  for (j = 0; j < DATA_WIDTH/8; j = j + 1) begin : GEN_RDATA
-			  assign s_RDATA_o [j*8 +: 8] = mem[addr_r + j];
-		  end 
-	 endgenerate
-    //assign s_RDATA_o  = mem[addr_r];
-    assign s_RID_o    = saved_id_r;
-    assign s_RLAST_o  = (burst_cnt_r == s_ARLEN_i);
-    assign s_RRESP_o  = 2'b00;
-
-    // WRITE ADDRESS
-    assign s_AWREADY_o = (state_w == AW);
-
-    // WRITE DATA
-    assign s_WREADY_o = (state_w == WDATA);
-
-    // WRITE RESP
-    assign s_BVALID_o = (state_w == BRESP);
-    assign s_BRESP_o  = 2'b00;
-    assign s_BID_o    = saved_id_w;
+    // 5. AXI RAM
+    axi_ram #(
+        .ID_WIDTH(ID_WIDTH), .ADDR_WIDTH(ADDR_WIDTH), .DATA_WIDTH(DATA_WIDTH), .RAM_SIZE(128)
+    ) u_axi_ram (
+        .ACLK_i(ACLK_i),
+        .ram_wren(mux_ram_we),
+        .ram_address(mux_ram_addr),
+        .ram_data_in(mux_ram_din),
+        .ram_data_out(ram_dout),
+        .strobe(mux_strobe)
+    );
 
 endmodule
