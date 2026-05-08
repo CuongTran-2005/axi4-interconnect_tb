@@ -59,6 +59,9 @@ input                       ACLK_i,
 	  reg  [1:0]                reg_set_AWBURST_i;
      reg  [7:0]                reg_set_AWLEN_i;
      reg  [2:0]                reg_set_AWSIZE_i;
+	  //Strobe
+	  	 wire [ADDR_WIDTH/8-1:0] bytes_per_beat = 1 << set_AWSIZE_i;
+	 wire [1:0] offset = w_set_addr_memory[1:0];
 	  
 	  //================ PARAMETER STATE =================//
 
@@ -145,6 +148,7 @@ input                       ACLK_i,
 	assign w_request = (state_w == WAIT || state_w == WDATA);
 	 //RAM
 	assign ram_wren = (state_w == WDATA && w_ram_access);
+		assign strobe = ((1 << bytes_per_beat) - 1) << offset;
 	 // WRITE ADDRESS
     assign m_AWVALID_o = (state_w == AW) ; // set lai awvalid
     assign m_AWADDR_o  = reg_set_AWADDR_i;

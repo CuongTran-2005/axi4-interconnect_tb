@@ -12,7 +12,7 @@ module axi_slave_w#(
 	 input  w_ram_access,
 	
 	 output reg    [6:0] 				ram_address,
-	 output reg [DATA_WIDTH:0] 		ram_data_in,
+	 output reg [DATA_WIDTH-1:0] 		ram_data_in,
 	 output  								ram_wren,
 	 input    	[DATA_WIDTH-1:0]		ram_data_out,
 	 output 		[DATA_WIDTH/8-1:0]  	strobe,   //chua giai quyet strobe
@@ -60,6 +60,10 @@ module axi_slave_w#(
 	 wire [ADDR_WIDTH-1:0] wrap_base_w  = reg_s_AWADDR_i & ~mask_w;    //  AWADDR ban đầu
 	 wire [ADDR_WIDTH-1:0] offset_w     = addr_w & mask_w;
 	 wire [ADDR_WIDTH-1:0] next_offset_w= (offset_w + beat_size_w) & mask_w;
+	 
+	 	 //WSTRB
+	 wire [ADDR_WIDTH/8-1:0] bytes_per_beat = 1 << s_AWSIZE_i;
+	 wire [1:0] offset = s_AWADDR_i[1:0];
 	 //================PARAMETER STATE =================//
 	 localparam IDLE  = 3'd0,
                WAIT  = 3'd1,
@@ -164,7 +168,7 @@ module axi_slave_w#(
 	 //=========================================//
 	 //RAM
 	 assign ram_wren = (state_w == WDATA && w_ram_access) ? 0:1; //nen bat theo xung clock
-	 
+	 assign strobe =((1 << bytes_per_beat) - 1) << offset;
 	 //CONTROL
 	 assign w_busy = (state_w == WDATA);
 	

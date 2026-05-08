@@ -58,6 +58,9 @@ parameter ID_WIDTH = 4,
     reg  [1:0]                reg_set_ARBURST_i;
     reg  [7:0]                reg_set_ARLEN_i;
     reg  [2:0]                reg_set_ARSIZE_i;
+	 	 	 //WSTRB
+	 wire [ADDR_WIDTH/8-1:0] bytes_per_beat = 1 << set_ARSIZE_i;
+	 wire [1:0] offset = r_set_addr_memory[1:0];
 	 	  //================ PARAMETER STATE =================//
 integer i;
 localparam 		IDLE  = 3'd0,
@@ -142,6 +145,7 @@ always @(posedge ACLK_i or negedge ARESETn_i) begin
 	assign r_request = (state_r == WAIT || state_r == RDATA);
 //RAM
 	assign ram_wren = (state_r == RDATA && r_ram_access) ? 0:1;
+	assign strobe = ((1 << bytes_per_beat) - 1) << offset;
 // READ ADDRESS
     assign m_ARVALID_o = (state_r == AR);
     assign m_ARADDR_o  = reg_set_ARADDR_i;

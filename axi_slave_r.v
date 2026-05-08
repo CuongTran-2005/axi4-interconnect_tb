@@ -11,8 +11,8 @@ parameter ID_WIDTH = 4,
  output 							  		r_busy,
  input  									r_ram_access,
  
- output     [6:0] 					ram_address,
- output reg [DATA_WIDTH:0] 		ram_data_in,
+ output     [ADDR_WIDTH-1:0] 					ram_address,
+ output reg [DATA_WIDTH-1:0] 		ram_data_in,
  output  								ram_wren,
  input    	[DATA_WIDTH-1:0]		ram_data_out,
  output 		[DATA_WIDTH/8-1:0]  	strobe,   //chua giai quyet strobe
@@ -39,7 +39,7 @@ parameter ID_WIDTH = 4,
 
  //================ REG R=================//
 	 
-    reg [4:0] mem_ptr_r;
+    reg [ADDR_WIDTH-1:0] mem_ptr_r;
     reg [7:0] burst_cnt_r;
     reg [ID_WIDTH-1:0] saved_id_r;  //chua dung
     reg [2:0] state_r, next_state_r;
@@ -57,6 +57,11 @@ parameter ID_WIDTH = 4,
 	 wire [ADDR_WIDTH-1:0] wrap_base_r  = reg_s_ARADDR_i & ~mask_r;    //  ARADDR ban đầu
 	 wire [ADDR_WIDTH-1:0] offset_r     = mem_ptr_r & mask_r;
 	 wire [31:0] next_offset_r= (offset_r + beat_size_r) & mask_r;  //dia chi tiep theo
+	 
+	 //WSTRB
+	 wire [ADDR_WIDTH/8-1:0] bytes_per_beat = 1 << s_ARSIZE_i;
+	 wire [1:0] offset = s_ARADDR_i[1:0];
+	 
 	 
 	 
 	 integer i;
@@ -158,15 +163,16 @@ parameter ID_WIDTH = 4,
    assign r_busy = (state_r == RDATA);
 	assign r_request = (state_r == WAIT || state_r == RDATA);
 	 //RAM
-	 assign ram_address =mem_ptr_r;
-	 assign ram_wren = (state_r == RDATA && r_ram_access) ? 1:0;
+	 assign ram_address =mem_ptr_r[ADDR_WIDTH-1:2] ; //sua
 	 
+	 assign ram_wren = (state_r == RDATA && r_ram_access) ? 1:0;
+	 assign strobe =((1 << bytes_per_beat) - 1) << offset;
     // READ ADDRESS
     assign s_ARREADY_o = (state_r == AR);
 
     // READ DATA
     assign s_RVALID_o = (state_r == RDATA);
 	 assign s_RDATA_o = ram_data_out;
-		  				
+	 
 					
 endmodule
